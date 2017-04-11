@@ -67,7 +67,9 @@ BULL = {
   new = function(player)
     local new = {
       vehicle = player.vehicle,
-      driver=player, active=false
+      driver=player,
+      surface=player.surface,
+      active=false
     }
     new.settings = Settings.loadByPlayer(player)
     setmetatable(new, {__index=BULL})
@@ -78,6 +80,7 @@ BULL = {
     local i = BULL.findByVehicle(player.vehicle)
     if i then
       global.bull[i].driver = player
+      global.bull[i].surface = player.surface
       global.bull[i].settings = Settings.loadByPlayer(player)
     else
       table.insert(global.bull, BULL.new(player))
@@ -114,7 +117,7 @@ BULL = {
     return false
   end,
   
-  removeTrees = function(self,pos, area)
+  removeTrees = function(self,pos,surf, area)
     if not area then
       area = {{pos.x - 1.5, pos.y - 1.5}, {pos.x + 1.5, pos.y + 1.5}}
     else
@@ -124,7 +127,7 @@ BULL = {
     
     --self:fillWater(area)
     
-    for _, entity in ipairs(game.surfaces[1].find_entities_filtered{area = area, type = "tree"}) do
+    for _, entity in ipairs(surf.find_entities_filtered{area = area, type = "tree"}) do
       if self.settings.collect then
         if self:addItemToCargo("raw-wood", 1) then
           entity.die()
@@ -136,10 +139,10 @@ BULL = {
       end
     end
     if self.settings.collect then
-      self:pickupItems(pos, area)
+      self:pickupItems(pos,surf,area)
     end
-    self:blockprojectiles(pos,area)
-    for _, entity in ipairs(game.surfaces[1].find_entities{{area[1][1], area[1][2]}, {area[2][1], area[2][2]}}) do
+    self:blockprojectiles(pos,surf,area)
+    for _, entity in ipairs(surf.find_entities{{area[1][1], area[1][2]}, {area[2][1], area[2][2]}}) do
       if not blacklisttype[entity.type] and not blacklistname[entity.name] then
         if self.settings.collect then
           for i=1,4,1 do
@@ -156,6 +159,7 @@ BULL = {
               end
             end
           end
+          --[[
           -- required due to entities having different name than item. similar to stone problem.
           if entity.name == "straight-rail" then
             if self:addItemToCargo("rail", 1) then
@@ -169,12 +173,28 @@ BULL = {
               entity.destroy()
               return
             end
-          end
-
-          if self:addItemToCargo(entity.name, 1) then
-            entity.destroy()
+          end]]
+          if entity.minable then
+            local products = entity.prototype.mineable_properties.products
+            if products then
+              for _, product in pairs(products) do
+                local name = product.name
+                local count = math.random(product.amount_min, product.amount_max)
+                if self:addItemToCargo(name, count) then
+                  game.raise_event(defines.events.on_robot_pre_mined,
+                                  {name=defines.events.on_robot_pre_mined,
+                                   tick=game.tick,
+                                   entity=entity,
+                                   mod="bulldozer"})
+                  entity.destroy()
+                else
+                  self:deactivate("Error (Storage Full)",true)
+                  break
+                end
+              end
+            end
           else
-            self:deactivate("Error (Storage Full)",true)
+            entity.die()
           end
         else
           entity.die()
@@ -183,7 +203,7 @@ BULL = {
     end
    
     if removeStone then
-      for _, entity in ipairs(game.surfaces[1].find_entities_filtered{area = area, name = "stone-rock"}) do
+      for _, entity in ipairs(surf.find_entities_filtered{area = area, name = "stone-rock"}) do
         if self.settings.collect then
           if self:addItemToCargo("stone", 5) then
             entity.die()
@@ -198,18 +218,18 @@ BULL = {
   end,
   
       
-  blockprojectiles = function(self,pos, area)
-    for _, entity in ipairs(game.surfaces[1].find_entities_filtered{area = area, name="acid-projectile-purple"}) do
+  blockprojectiles = function(self,pos,surf,area)
+    for _, entity in ipairs(surf.find_entities_filtered{area = area, name="acid-projectile-purple"}) do
       entity.destroy()
     end
   end,
 
-  pickupItems = function(self,pos, area)
-    for _, entity in ipairs(game.surfaces[1].find_entities_filtered{area = area, name="item-on-ground"}) do
+  pickupItems = function(self,pos,surf,area)
+    for _, entity in ipairs(surf.find_entities_filtered{area = area, name="item-on-ground"}) do
       if self:addItemToCargo(entity.stack.name, entity.stack.count) then
         entity.destroy()
       else
-        self:flyingText("Storage Full", RED, true)
+        self:flyingText("Storage Full", RED, true, surf)
       end
     end
   end,
@@ -271,15 +291,16 @@ BULL = {
     if self.driver.name ~= "bull_player" then
       self.driver.print(msg)
     else
-      self:flyingText(msg, RED, true)
+      self:flyingText(msg, RED, true, self.driver.surface)
     end
   end,
   
-  flyingText = function(self, line, color, show, pos)
+  flyingText = function(self, line, color, show, surf, pos)
     if show then
       local pos = pos or addPos(self.vehicle.position, {x=0,y=-1})
       color = color or RED
-      game.surfaces[1].create_entity({name="flying-text", position=pos, text=line, color=color})
+      surf = surf or self.surface
+      surf.create_entity({name="flying-text", position=pos, text=line, color=color})
     end
   end,
   
@@ -289,11 +310,12 @@ BULL = {
         local blade={{x=-2,y=-3},{x=-1,y=-3},{x=0,y=-3},{x=1,y=-3},{x=2,y=-3},{x=-2,y=-2},{x=-1,y=-2},{x=0,y=-2},{x=1,y=-2},{x=2,y=-2}}
         local ori = math.floor(self.vehicle.orientation * 360)        
         pos=self.driver.position
+        surf=self.driver.surface
         for _,bs in ipairs(blade) do
           local rbs=rotate(bs,ori)
           area={subPos(rbs,{x=0.5,y=0.5}),addPos(rbs,{x=0.5,y=0.5})}
           --area={{x=-2,y=-3},{x=2,y=-2}}
-          self:removeTrees(pos,area)
+          self:removeTrees(pos,surf,area)
         end
       end
     end

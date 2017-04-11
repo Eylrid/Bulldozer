@@ -1,0 +1,20 @@
+1.3.1
+=====
+
+Made more compatible with other mods
+
+Surfaces
+--------
+
+Uses the surface the vehicle is on, instead of always taking entities from the
+default surface (Nauvis). This makes Bulldozer compatible with mods that use
+surfaces, such as Factorissimo and Surfaces Remake.
+
+Mining Results
+--------------
+
+Look up the mining products for entities. Some entities give items that have
+different names than the entity. Rails is an example that was a hardcoded
+exception. Mods can introduce other items with the same problem. Rather than
+hardcoding each entity, this is a general solution that will work for all
+entities, including those added by mods.
